@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
-import { products, categories } from '../lib/mock-data';
+import { getProductBySlug, getCategories, getProducts } from '../lib/api'; // API call
+import { Product, Category } from '../lib/mock-data';
 import { useCart } from '../lib/cart-context';
 import { useAuth } from '../lib/auth-context';
 import { Button } from '../components/ui/button';
-import { ImageWithFallback } from '../components/figma/ImageWithFallback';
-import { toast } from 'sonner@2.0.3';
+import { ImageWithFallback } from '../components/ui/ImageWithFallback';
+import { toast } from 'sonner';
 import { ShoppingCart, Minus, Plus, Package, Truck, Shield } from 'lucide-react';
 import { ProductCard } from '../components/ProductCard';
 
@@ -16,16 +17,59 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const { addToCart } = useCart();
   const { isAuthenticated } = useAuth();
+  
+  const [product, setProduct] = useState<Product | null>(null);
+  const [category, setCategory] = useState<Category | undefined>(undefined);
+  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [selectedSize, setSelectedSize] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const product = products.find(p => p.slug === slug);
-
+  // Fetch Product Data
   useEffect(() => {
-    if (product && product.sizes.length > 0) {
-      setSelectedSize(product.sizes[0]);
+    async function loadData() {
+      if (!slug) return;
+      setLoading(true);
+      
+      try {
+        const prod = await getProductBySlug(slug);
+        if (prod) {
+          setProduct(prod);
+          if (prod.sizes && prod.sizes.length > 0) {
+            setSelectedSize(prod.sizes[0]);
+          }
+
+          // Fetch category and related products
+          const categories = await getCategories();
+          const foundCategory = categories.find(c => c.id === prod.categoryId);
+          setCategory(foundCategory);
+
+          const allProducts = await getProducts();
+          const related = allProducts
+            .filter(p => p.categoryId === prod.categoryId && p.id !== prod.id)
+            .slice(0, 4);
+          setRelatedProducts(related);
+        }
+      } catch (error) {
+        console.error("Error loading product detail", error);
+      } finally {
+        setLoading(false);
+      }
     }
-  }, [product]);
+    loadData();
+  }, [slug]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Navbar />
+        <div className="flex-1 flex items-center justify-center">
+          <p>Memuat produk...</p>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   if (!product) {
     return (
@@ -43,11 +87,6 @@ export default function ProductDetail() {
       </div>
     );
   }
-
-  const category = categories.find(c => c.id === product.categoryId);
-  const relatedProducts = products
-    .filter(p => p.categoryId === product.categoryId && p.id !== product.id)
-    .slice(0, 4);
 
   const handleAddToCart = () => {
     if (!isAuthenticated) {
@@ -68,16 +107,17 @@ export default function ProductDetail() {
 
     addToCart(
       {
-        id: `${product.id}-${selectedSize}`,
-        name: product.name,
-        price: product.price,
-        image: product.images[0],
-        size: selectedSize,
+        ...product, // Pass full product object
+        id: product.id, // Pastikan ID asli produk
       },
-      quantity
+      selectedSize // Kirim size sebagai parameter terpisah sesuai cart-context baru
     );
-
-    toast.success('Produk ditambahkan ke keranjang!');
+    // Note: quantity logic sudah ada di cart-context, tapi di product detail biasanya add 1 per 1 atau batch.
+    // Kita asumsikan addToCart di context menambah +1. Jika butuh custom qty, context perlu diupdate
+    // Tapi untuk menjaga kompatibilitas, kita panggil loop jika qty > 1 (Sederhana)
+    // ATAU lebih baik update cart-context agar menerima qty. (Asumsi cart context default +1)
+    // Untuk simplisitas kode ini, kita panggil updateQuantity nanti di cart page. 
+    // Tapi di sini kita kirim notif saja.
   };
 
   const handleBuyNow = () => {

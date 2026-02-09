@@ -5,42 +5,93 @@ import { Badge } from '../../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
-import { orders as mockOrders, Order } from '../../lib/mock-data';
+import { supabase } from '../../lib/supabase';
+import { Order } from '../../lib/mock-data'; // Type definition
 import { Eye } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [loading, setLoading] = useState(true);
 
+  // Fetch Orders from Supabase
   useEffect(() => {
-    // Load orders from localStorage (user orders) and combine with mock orders
-    const userOrders = JSON.parse(localStorage.getItem('userOrders') || '[]');
-    setOrders([...mockOrders, ...userOrders]);
+    fetchOrders();
   }, []);
+
+  async function fetchOrders() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        items:order_items(*)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      toast.error('Gagal memuat pesanan');
+      console.error("Error fetching orders:", error);
+    } else if (data) {
+      // Mapping data dari format database (snake_case) ke format aplikasi (camelCase)
+      const mappedOrders: Order[] = data.map((order: any) => ({
+        id: order.id,
+        customerId: order.customer_id,
+        customerName: order.customer_name,
+        customerEmail: order.customer_email,
+        date: order.created_at, // atau order.date jika ada kolom date terpisah
+        status: order.status,
+        total: order.total,
+        shippingAddress: order.shipping_address, // JSONB otomatis ter-parse
+        paymentMethod: order.payment_method,
+        items: order.items.map((item: any) => ({
+          productId: item.product_id,
+          productName: item.product_name,
+          quantity: item.quantity,
+          price: item.price,
+          size: item.size
+        }))
+      }));
+      setOrders(mappedOrders);
+    }
+    setLoading(false);
+  }
 
   const handleViewDetail = (order: Order) => {
     setSelectedOrder(order);
     setIsDetailOpen(true);
   };
 
-  const handleStatusUpdate = (orderId: string, newStatus: Order['status']) => {
+  const handleStatusUpdate = async (orderId: string, newStatus: Order['status']) => {
+    // 1. Optimistic Update (Update UI duluan agar terasa cepat)
     setOrders(prev =>
       prev.map(order =>
         order.id === orderId ? { ...order, status: newStatus } : order
       )
     );
     
-    // Update localStorage
-    const userOrders = JSON.parse(localStorage.getItem('userOrders') || '[]');
-    const updatedUserOrders = userOrders.map((order: Order) =>
-      order.id === orderId ? { ...order, status: newStatus } : order
-    );
-    localStorage.setItem('userOrders', JSON.stringify(updatedUserOrders));
-    
-    toast.success('Status pesanan berhasil diupdate');
+    // 2. Update Database
+    const { error } = await supabase
+      .from('orders')
+      .update({ status: newStatus })
+      .eq('id', orderId);
+
+    if (error) {
+      // Jika gagal, kembalikan ke state awal (revert) & tampilkan error
+      toast.error('Gagal update status di database');
+      console.error("Update error:", error);
+      fetchOrders(); // Refresh data asli dari server
+    } else {
+      toast.success('Status pesanan berhasil diupdate');
+      
+      // Update juga di modal detail jika sedang terbuka
+      if (selectedOrder && selectedOrder.id === orderId) {
+        setSelectedOrder({ ...selectedOrder, status: newStatus });
+      }
+    }
   };
 
   const getStatusColor = (status: Order['status']) => {
@@ -55,6 +106,8 @@ export default function AdminOrders() {
         return 'bg-green-100 text-green-800';
       case 'cancelled':
         return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -70,6 +123,8 @@ export default function AdminOrders() {
         return 'Selesai';
       case 'cancelled':
         return 'Dibatalkan';
+      default:
+        return status;
     }
   };
 
@@ -112,42 +167,56 @@ export default function AdminOrders() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredOrders.map(order => (
-              <TableRow key={order.id}>
-                <TableCell className="font-medium">{order.id}</TableCell>
-                <TableCell>
-                  <div>
-                    <p className="font-medium">{order.customerName}</p>
-                    <p className="text-sm text-muted-foreground">{order.customerEmail}</p>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {new Date(order.date).toLocaleDateString('id-ID', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  })}
-                </TableCell>
-                <TableCell className="font-medium">
-                  Rp {order.total.toLocaleString('id-ID')}
-                </TableCell>
-                <TableCell>
-                  <Badge className={getStatusColor(order.status)}>
-                    {getStatusText(order.status)}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleViewDetail(order)}
-                  >
-                    <Eye className="h-4 w-4 mr-1" />
-                    Detail
-                  </Button>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  Memuat data pesanan...
                 </TableCell>
               </TableRow>
-            ))}
+            ) : filteredOrders.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  Tidak ada pesanan ditemukan.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredOrders.map(order => (
+                <TableRow key={order.id}>
+                  <TableCell className="font-medium">{order.id}</TableCell>
+                  <TableCell>
+                    <div>
+                      <p className="font-medium">{order.customerName}</p>
+                      <p className="text-sm text-muted-foreground">{order.customerEmail}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {new Date(order.date).toLocaleDateString('id-ID', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    Rp {order.total.toLocaleString('id-ID')}
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={getStatusColor(order.status)}>
+                      {getStatusText(order.status)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleViewDetail(order)}
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      Detail
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
@@ -170,7 +239,7 @@ export default function AdminOrders() {
                 <label className="block text-sm font-medium mb-2">Update Status:</label>
                 <Select
                   value={selectedOrder.status}
-                  onValueChange={(value) => handleStatusUpdate(selectedOrder.id, value as Order['status'])}
+                  onValueChange={(value: string) => handleStatusUpdate(selectedOrder.id, value as Order['status'])}
                 >
                   <SelectTrigger>
                     <SelectValue />

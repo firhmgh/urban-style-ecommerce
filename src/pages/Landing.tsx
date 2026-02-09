@@ -1,13 +1,19 @@
-import { Link } from 'react-router';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
-import { products } from '../lib/mock-data';
+import { getFeaturedProducts } from '../lib/api'; // API
+import { Product } from '../lib/mock-data';
 import { ProductCard } from '../components/ProductCard';
 import { ArrowRight, Truck, Shield, CreditCard } from 'lucide-react';
 
 export default function Landing() {
-  const featuredProducts = products.filter(p => p.featured).slice(0, 6);
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
+
+  useEffect(() => {
+    getFeaturedProducts().then(data => setFeaturedProducts(data.slice(0, 6)));
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col">

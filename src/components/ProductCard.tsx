@@ -1,4 +1,4 @@
-import { Link } from 'react-router';
+import { Link } from 'react-router-dom';
 import { Product } from '../lib/mock-data';
 import { ImageWithFallback } from './ui/ImageWithFallback';
 
@@ -7,12 +7,17 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product }: ProductCardProps) {
+  // Pastikan gambar valid (jika array kosong)
+  const mainImage = product.images && product.images.length > 0 
+    ? product.images[0] 
+    : 'https://via.placeholder.com/300x300?text=No+Image';
+
   return (
     <Link to={`/product/${product.slug}`} className="group">
       <div className="bg-white rounded-lg overflow-hidden border hover:shadow-lg transition-all duration-300">
         <div className="aspect-square overflow-hidden bg-muted">
           <ImageWithFallback
-            src={product.images[0]}
+            src={mainImage}
             alt={product.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />

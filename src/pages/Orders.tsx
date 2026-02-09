@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { useAuth } from '../lib/auth-context';
+import { supabase } from '../lib/supabase'; // Direct supabase query
 import { Order } from '../lib/mock-data';
 import { Package, Clock, Truck, CheckCircle, XCircle } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
@@ -11,21 +12,58 @@ export default function Orders() {
   const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
-    } else {
-      // Load orders from localStorage
-      const userOrders = JSON.parse(localStorage.getItem('userOrders') || '[]');
-      // Filter orders for current user
-      const myOrders = userOrders.filter((order: Order) => order.customerId === user?.id);
-      setOrders(myOrders);
+      return;
     }
+
+    async function fetchOrders() {
+      if (!user) return;
+      
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          items:order_items(*)
+        `)
+        .eq('customer_id', user.id) // Filter by logged in user
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error("Gagal mengambil orders", error);
+      } else {
+        // Mapping Snake Case DB -> Camel Case Frontend
+        const mappedOrders: Order[] = data.map((order: any) => ({
+          id: order.id,
+          customerId: order.customer_id,
+          customerName: order.customer_name,
+          customerEmail: order.customer_email,
+          date: order.created_at, // atau order.date
+          status: order.status,
+          total: order.total,
+          shippingAddress: order.shipping_address, // JSONB auto parsed
+          paymentMethod: order.payment_method,
+          items: order.items.map((item: any) => ({
+            productId: item.product_id,
+            productName: item.product_name,
+            quantity: item.quantity,
+            price: item.price,
+            size: item.size
+          }))
+        }));
+        setOrders(mappedOrders);
+      }
+      setLoading(false);
+    }
+
+    fetchOrders();
   }, [isAuthenticated, navigate, user]);
 
-  if (!isAuthenticated) {
-    return null;
+  if (!isAuthenticated || loading) {
+    return <div className="p-8 text-center">Memuat riwayat pesanan...</div>;
   }
 
   const getStatusIcon = (status: Order['status']) => {

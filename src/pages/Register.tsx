@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { useAuth } from '../lib/auth-context';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 export default function Register() {
   const [name, setName] = useState('');
@@ -31,15 +31,16 @@ export default function Register() {
     setLoading(true);
 
     try {
-      const success = await register(name, email, password);
-      if (success) {
-        toast.success('Registrasi berhasil! Selamat datang!');
-        navigate('/home');
+      const result = await register(name, email, password);
+      
+      if (result.success) {
+        toast.success('Registrasi berhasil! Silakan login.');
+        navigate('/login');
       } else {
-        toast.error('Registrasi gagal');
+        toast.error(result.error || 'Registrasi gagal');
       }
     } catch (error) {
-      toast.error('Terjadi kesalahan');
+      toast.error('Terjadi kesalahan koneksi');
     } finally {
       setLoading(false);
     }
@@ -121,7 +122,7 @@ export default function Register() {
             </div>
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Loading...' : 'Daftar Sekarang'}
+              {loading ? 'Mendaftarkan...' : 'Daftar Sekarang'}
             </Button>
           </form>
 

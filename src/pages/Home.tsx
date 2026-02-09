@@ -1,29 +1,75 @@
-import { useEffect } from 'react';
-import { useNavigate, Link } from 'react-router';
+import { useEffect, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { useAuth } from '../lib/auth-context';
-import { products, categories } from '../lib/mock-data';
+import { getFeaturedProducts, getCategories, getProducts } from '../lib/api'; // Menggunakan API Supabase
+import { Product, Category } from '../lib/mock-data';
 import { ProductCard } from '../components/ProductCard';
 import { Button } from '../components/ui/button';
 import { ArrowRight, Tag } from 'lucide-react';
 
 export default function Home() {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, profile } = useAuth();
   const navigate = useNavigate();
 
+  // State untuk menampung data dari Database
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
+  const [newArrivals, setNewArrivals] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+
+  // 1. Cek Login
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated && !loading) {
       navigate('/login');
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, loading]);
+
+  // 2. Ambil Data dari Supabase (Pengganti Mock Data)
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [featuredData, categoryData, allProducts] = await Promise.all([
+          getFeaturedProducts(),
+          getCategories(),
+          getProducts()
+        ]);
+
+        setFeaturedProducts(featuredData);
+        setCategories(categoryData);
+        // Ambil 4 produk terbaru untuk New Arrivals
+        setNewArrivals(allProducts.slice(0, 4));
+      } catch (error) {
+        console.error("Gagal memuat data", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    if (isAuthenticated) {
+      loadData();
+    }
+  }, [isAuthenticated]);
 
   if (!isAuthenticated) {
     return null;
   }
 
-  const featuredProducts = products.filter(p => p.featured);
-  const newArrivals = products.slice(0, 4);
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-muted-foreground animate-pulse">Memuat toko...</p>
+      </div>
+    );
+  }
+
+  // Nama User dari Metadata Supabase (Fallback ke email jika nama kosong)
+  const displayName = profile?.full_name 
+                   || user?.user_metadata?.full_name 
+                   || user?.email?.split('@')[0] 
+                   || 'User';
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -33,7 +79,7 @@ export default function Home() {
       <section className="bg-gradient-to-r from-primary to-primary/80 text-primary-foreground py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h1 className="text-3xl md:text-4xl font-bold mb-2">
-            Selamat Datang, {user?.name}!
+            Selamat Datang, {displayName}!
           </h1>
           <p className="text-lg opacity-90">
             Temukan koleksi streetwear terbaru kami

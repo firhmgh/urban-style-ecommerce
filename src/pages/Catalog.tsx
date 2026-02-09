@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router-dom'; // Perbaikan import dari 'react-router' ke 'react-router-dom'
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
-import { products, categories } from '../lib/mock-data';
+import { getProducts, getCategories } from '../lib/api'; // Menggunakan API
+import { Product, Category } from '../lib/mock-data'; // Type definition saja
 import { ProductCard } from '../components/ProductCard';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
@@ -14,8 +15,34 @@ export default function Catalog() {
   const [selectedCategory, setSelectedCategory] = useState<string>(
     searchParams.get('category') || 'all'
   );
+  
+  // State untuk data dari database
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
+
+  // Fetch data saat pertama kali load
+  useEffect(() => {
+    async function fetchData() {
+      setLoading(true);
+      try {
+        const [productsData, categoriesData] = await Promise.all([
+          getProducts(),
+          getCategories()
+        ]);
+        setProducts(productsData);
+        setCategories(categoriesData);
+      } catch (error) {
+        console.error("Gagal memuat data katalog", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
 
   useEffect(() => {
     const category = searchParams.get('category');
@@ -30,9 +57,12 @@ export default function Catalog() {
       .includes(searchQuery.toLowerCase()) ||
       product.description.toLowerCase().includes(searchQuery.toLowerCase());
     
+    // Cari ID kategori berdasarkan slug yang dipilih
+    const currentCategoryObj = categories.find(c => c.slug === selectedCategory);
+    
     const matchesCategory =
       selectedCategory === 'all' ||
-      categories.find(c => c.slug === selectedCategory)?.id === product.categoryId;
+      (currentCategoryObj && currentCategoryObj.id === product.categoryId);
 
     return matchesSearch && matchesCategory;
   });
@@ -120,7 +150,11 @@ export default function Catalog() {
           </div>
 
           {/* Products Grid */}
-          {paginatedProducts.length > 0 ? (
+          {loading ? (
+             <div className="text-center py-16">
+               <p className="text-muted-foreground animate-pulse">Memuat produk...</p>
+             </div>
+          ) : paginatedProducts.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
               {paginatedProducts.map(product => (
                 <ProductCard key={product.id} product={product} />
@@ -145,7 +179,7 @@ export default function Catalog() {
           )}
 
           {/* Pagination */}
-          {totalPages > 1 && (
+          {!loading && totalPages > 1 && (
             <div className="flex justify-center items-center space-x-2">
               <Button
                 variant="outline"

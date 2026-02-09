@@ -1,32 +1,75 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { useAuth } from '../lib/auth-context';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  
+  const { login, isAuthenticated, user } = useAuth(); 
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      if (user.user_metadata?.role === 'admin') {
+        navigate('/admin', { replace: true });
+      } else {
+        navigate('/home', { replace: true });
+      }
+    }
+  }, [isAuthenticated, user, navigate]);
+
+  const translateError = (errorMessage: string = '') => {
+    const msg = errorMessage.toLowerCase();
+    if (msg.includes('invalid login credentials') || msg.includes('invalid password')) {
+      return 'Email atau kata sandi salah.';
+    }
+    if (msg.includes('email not confirmed')) {
+      return 'Email belum diverifikasi.';
+    }
+    return 'Terjadi kesalahan sistem.';
+  };
+
+  // Fungsi validasi email manual
+  const isValidEmail = (email: string) => {
+    return /\S+@\S+\.\S+/.test(email);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 1. Validasi Manual (Menggantikan Pop-up Browser)
+    if (!email) {
+      toast.warning('Email wajib diisi.');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      toast.warning('Format email tidak valid (harus mengandung @ dan domain).');
+      return;
+    }
+    if (!password) {
+      toast.warning('Kata sandi wajib diisi.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const success = await login(email, password);
-      if (success) {
-        toast.success('Login berhasil!');
-        navigate('/home');
+      const result = await login(email, password);
+      
+      if (result.success) {
+        toast.success('Login berhasil! Mengalihkan...');
       } else {
-        toast.error('Email atau password salah');
+        const indoMessage = translateError(result.error);
+        toast.error('Gagal Masuk', { description: indoMessage });
       }
     } catch (error) {
-      toast.error('Terjadi kesalahan');
+      toast.error('Kesalahan Koneksi', { description: 'Periksa internet Anda.' });
     } finally {
       setLoading(false);
     }
@@ -39,60 +82,53 @@ export default function Login() {
           <Link to="/" className="text-2xl font-bold inline-block">
             URBAN STYLE
           </Link>
-          <h2 className="mt-6 text-3xl font-bold">Login ke Akun Anda</h2>
+          <h2 className="mt-6 text-3xl font-bold">Masuk ke Akun</h2>
           <p className="mt-2 text-muted-foreground">
             Belum punya akun?{' '}
-            <Link to="/register" className="text-accent hover:underline">
-              Daftar di sini
+            <Link to="/register" className="text-accent hover:underline font-medium">
+              Daftar sekarang
             </Link>
           </p>
         </div>
 
-        <div className="bg-white p-8 rounded-lg shadow-lg">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
+        <div className="bg-white p-8 rounded-lg shadow-lg border border-border">
+          {/* Tambahkan noValidate agar pop-up browser bahasa Inggris mati */}
+          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+            <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="nama@email.com"
-                required
+                placeholder="contoh@email.com"
                 className="mt-1"
+                disabled={loading}
               />
             </div>
 
-            <div>
-              <Label htmlFor="password">Password</Label>
+            <div className="space-y-2">
+              <Label htmlFor="password">Kata Sandi</Label>
               <Input
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                required
                 className="mt-1"
+                disabled={loading}
               />
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Loading...' : 'Login'}
+            <Button type="submit" className="w-full font-semibold" disabled={loading}>
+              {loading ? 'Memproses...' : 'Masuk'}
             </Button>
           </form>
-
-          <div className="mt-6 p-4 bg-muted rounded-lg">
-            <p className="text-sm font-medium mb-2">Demo Accounts:</p>
-            <div className="text-xs space-y-1 text-muted-foreground">
-              <p><strong>Admin:</strong> admin@urbanstyle.com / admin123</p>
-              <p><strong>Customer:</strong> customer@test.com / customer123</p>
-            </div>
-          </div>
         </div>
 
         <div className="text-center mt-6">
-          <Link to="/" className="text-sm text-muted-foreground hover:text-accent">
-            ← Kembali ke Beranda
+          <Link to="/" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+            ← Kembali ke Halaman Utama
           </Link>
         </div>
       </div>

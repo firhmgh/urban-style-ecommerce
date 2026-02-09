@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -8,16 +8,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Badge } from '../../components/ui/badge';
-import { products as initialProducts, categories, Product } from '../../lib/mock-data';
+import { supabase } from '../../lib/supabase';
+import { getProducts, getCategories } from '../../lib/api';
+import { Product, Category } from '../../lib/mock-data';
 import { Plus, Pencil, Trash2, Image as ImageIcon } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 export default function AdminProducts() {
-  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [loading, setLoading] = useState(true);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -31,6 +35,23 @@ export default function AdminProducts() {
     featured: false,
   });
 
+  // Fetch Data Real
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  async function fetchData() {
+    setLoading(true);
+    try {
+      const [prods, cats] = await Promise.all([getProducts(), getCategories()]);
+      setProducts(prods);
+      setCategories(cats);
+    } catch (e) {
+      toast.error('Gagal mengambil data produk');
+    }
+    setLoading(false);
+  }
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     setFormData(prev => ({
@@ -40,7 +61,7 @@ export default function AdminProducts() {
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const productData = {
@@ -49,28 +70,40 @@ export default function AdminProducts() {
       description: formData.description,
       price: parseInt(formData.price),
       stock: parseInt(formData.stock),
-      categoryId: formData.categoryId,
+      category_id: formData.categoryId, // sesuaikan nama kolom DB
       images: formData.images.split(',').map(url => url.trim()),
       sizes: formData.sizes.split(',').map(size => size.trim()),
       featured: formData.featured,
     };
 
     if (editingProduct) {
-      setProducts(prev =>
-        prev.map(prod =>
-          prod.id === editingProduct.id
-            ? { ...prod, ...productData }
-            : prod
-        )
-      );
-      toast.success('Produk berhasil diupdate');
+      // UPDATE
+      const { error } = await supabase
+        .from('products')
+        .update(productData)
+        .eq('id', editingProduct.id);
+
+      if (error) {
+        toast.error('Gagal mengupdate produk: ' + error.message);
+      } else {
+        toast.success('Produk berhasil diupdate');
+        fetchData(); // Reload data
+      }
     } else {
-      const newProduct: Product = {
-        id: Date.now().toString(),
-        ...productData,
-      };
-      setProducts(prev => [...prev, newProduct]);
-      toast.success('Produk berhasil ditambahkan');
+      // INSERT
+      // ID biarkan auto generate oleh DB atau generate UUID di sini jika tipe kolom text
+      // Di script SQL kita pakai text, jadi kita generate ID simple
+      const newId = Date.now().toString();
+      const { error } = await supabase
+        .from('products')
+        .insert({ id: newId, ...productData });
+
+      if (error) {
+        toast.error('Gagal menambah produk: ' + error.message);
+      } else {
+        toast.success('Produk berhasil ditambahkan');
+        fetchData();
+      }
     }
 
     setIsDialogOpen(false);
@@ -93,10 +126,16 @@ export default function AdminProducts() {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Yakin ingin menghapus produk ini?')) {
-      setProducts(prev => prev.filter(prod => prod.id !== id));
-      toast.success('Produk berhasil dihapus');
+      const { error } = await supabase.from('products').delete().eq('id', id);
+      
+      if (error) {
+        toast.error('Gagal menghapus: ' + error.message);
+      } else {
+        setProducts(prev => prev.filter(prod => prod.id !== id));
+        toast.success('Produk berhasil dihapus');
+      }
     }
   };
 
@@ -163,7 +202,7 @@ export default function AdminProducts() {
                     <Label htmlFor="categoryId">Kategori</Label>
                     <Select
                       value={formData.categoryId}
-                      onValueChange={(value) => setFormData(prev => ({ ...prev, categoryId: value }))}
+                      onValueChange={(value: string) => setFormData(prev => ({ ...prev, categoryId: value }))}
                       required
                     >
                       <SelectTrigger className="mt-1">
@@ -318,7 +357,11 @@ export default function AdminProducts() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredProducts.map(product => {
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-4">Memuat data...</TableCell>
+              </TableRow>
+            ) : filteredProducts.map(product => {
               const category = categories.find(c => c.id === product.categoryId);
               return (
                 <TableRow key={product.id}>

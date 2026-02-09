@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { categories as initialCategories, Category } from '../../lib/mock-data';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 export default function AdminCategories() {
   const [categories, setCategories] = useState<Category[]>(initialCategories);
