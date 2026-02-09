@@ -1,5 +1,5 @@
 {
-      "name": "E-Commerce System Design",
+      "name": "urban-style-ecommerce",
       "version": "0.1.0",
       "homepage": "https://firhmgh.github.io/urban-style-ecommerce",
       "private": true,
@@ -61,7 +61,7 @@
       },
       "scripts": {
             "dev": "vite",
-            "build": "tsc -b && vite build",
+            "build": "vite build",
             "lint": "eslint .",
             "preview": "vite preview",
             "predeploy": "npm run build",
