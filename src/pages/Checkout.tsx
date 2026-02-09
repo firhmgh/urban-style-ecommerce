@@ -10,7 +10,7 @@ import { Label } from '../components/ui/label';
 import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { toast } from 'sonner';
 import { CreditCard, Building2, Wallet } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { createOrder } from '../lib/api';
 
 export default function Checkout() {
   const { isAuthenticated, user, profile } = useAuth();
@@ -45,71 +45,50 @@ export default function Checkout() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  e.preventDefault();
+  setLoading(true);
 
-    // Validasi form
-    if (!formData.phone || !formData.address || !formData.city || !formData.postalCode) {
-      toast.error('Mohon lengkapi semua data pengiriman');
-      setLoading(false);
-      return;
-    }
+  if (!formData.phone || !formData.address || !formData.city || !formData.postalCode) {
+    toast.error('Mohon lengkapi semua data pengiriman');
+    setLoading(false);
+    return;
+  }
 
-    try {
-      // 1. Buat ID custom unik (ORD-tahun-random6digit)
-      const year = new Date().getFullYear();
-      const random = Math.floor(100000 + Math.random() * 900000); // 6 digit acak
-      const orderId = `ORD-${year}-${random}`;
-
-      // 2. Insert ke tabel orders
-      const { error: orderError } = await supabase
-        .from('orders')
-        .insert({
-          id: orderId,
-          customer_id: user.id,
-          customer_name: formData.name,
-          customer_email: formData.email,
-          total: grandTotal,
-          status: 'pending',
-          shipping_address: {
-            name: formData.name,
-            phone: formData.phone,
-            address: formData.address,
-            city: formData.city,
-            postalCode: formData.postalCode,
-          } as any, // jsonb
-          payment_method: getPaymentMethodName(paymentMethod),
-        });
-
-      if (orderError) throw orderError;
-
-      // 3. Insert ke tabel order_items (semua item di keranjang)
-      const orderItemsData = items.map(item => ({
-        order_id: orderId,
-        product_id: item.id,
-        product_name: item.name,
+  try {
+    const orderData = {
+      customerId: user.id,
+      customerName: formData.name,
+      customerEmail: formData.email,
+      total: grandTotal,
+      items: items.map(item => ({
+        productId: item.id,
+        productName: item.name,
         quantity: item.quantity,
         price: item.price,
-        size: item.selectedSize || 'N/A', // fallback jika selectedSize kosong
-      }));
+        size: item.selectedSize || 'N/A',
+      })),
+      shippingAddress: {
+        name: formData.name,
+        phone: formData.phone,
+        address: formData.address,
+        city: formData.city,
+        postalCode: formData.postalCode,
+      },
+      paymentMethod: getPaymentMethodName(paymentMethod),
+    };
 
-      const { error: itemsError } = await supabase
-        .from('order_items')
-        .insert(orderItemsData);
+    await createOrder(orderData);  // Panggil fungsi dari api.ts
 
-      if (itemsError) throw itemsError;
-
-      // Sukses: kosongkan keranjang, beri notif, redirect ke orders
-      clearCart();
-      toast.success('Pesanan berhasil dibuat! ID Pesanan: ' + orderId);
-      navigate('/orders');
-    } catch (error: any) {
-      console.error('Checkout error:', error);
-      toast.error(error.message || 'Gagal membuat pesanan. Cek koneksi atau console.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    clearCart();
+    toast.success('Pesanan berhasil dibuat!');
+    navigate('/orders');
+  } catch (error: any) {
+    console.error('Checkout error:', error);
+    toast.error(error.message || 'Gagal membuat pesanan');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const getPaymentMethodName = (method: string) => {
     switch (method) {

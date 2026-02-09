@@ -37,28 +37,24 @@ export default function Orders() {
       } else {
         // Mapping Snake Case DB -> Camel Case Frontend
 
-        const year = new Date().getFullYear();
-        const timestamp = Date.now().toString().slice(-6); // 6 digit terakhir timestamp
-        const orderId = `ORD-${year}-${timestamp}`; // contoh: ORD-2026-123456
-
         const mappedOrders: Order[] = data.map((order: any) => ({
-          id: orderId,
-          customerId: order.customer_id,
-          customerName: order.customer_name,
-          customerEmail: order.customer_email,
-          date: order.created_at, // atau order.date
-          status: order.status,
-          total: order.total,
-          shippingAddress: order.shipping_address, // JSONB auto parsed
-          paymentMethod: order.payment_method,
-          items: order.items.map((item: any) => ({
-            productId: item.product_id,
-            productName: item.product_name,
-            quantity: item.quantity,
-            price: item.price,
-            size: item.size
-          }))
-        }));
+  id: order.id, // pakai order.id dari DB
+  customerId: order.customer_id,
+  customerName: order.customer_name,
+  customerEmail: order.customer_email,
+  date: order.created_at,
+  status: order.status,
+  total: order.total,
+  shippingAddress: order.shipping_address,
+  paymentMethod: order.payment_method,
+  items: order.items.map((item: any) => ({
+    productId: item.product_id,
+    productName: item.product_name,
+    quantity: item.quantity,
+    price: item.price,
+    size: item.size
+  }))
+}));
         setOrders(mappedOrders);
       }
       setLoading(false);
