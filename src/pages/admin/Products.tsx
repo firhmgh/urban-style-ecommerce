@@ -9,10 +9,26 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Badge } from '../../components/ui/badge';
 import { supabase } from '../../lib/supabase';
-import { getProducts, getCategories } from '../../lib/api';
-import { Product, Category } from '../../lib/mock-data';
 import { Plus, Pencil, Trash2, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
+
+interface Product {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  price: number;
+  stock: number;
+  category_id: string; // ubah dari categoryId ke category_id (sesuai DB)
+  images: string[];
+  sizes: string[];
+  featured: boolean;
+}
+
+interface Category {
+  id: string;
+  name: string;
+}
 
 export default function AdminProducts() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -22,20 +38,20 @@ export default function AdminProducts() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [loading, setLoading] = useState(true);
-  
+
   const [formData, setFormData] = useState({
     name: '',
     slug: '',
     description: '',
     price: '',
     stock: '',
-    categoryId: '',
+    category_id: '',
     images: '',
     sizes: '',
     featured: false,
   });
 
-  // Fetch Data Real
+  // Fetch data real dari Supabase
   useEffect(() => {
     fetchData();
   }, []);
@@ -43,13 +59,30 @@ export default function AdminProducts() {
   async function fetchData() {
     setLoading(true);
     try {
-      const [prods, cats] = await Promise.all([getProducts(), getCategories()]);
-      setProducts(prods);
-      setCategories(cats);
-    } catch (e) {
-      toast.error('Gagal mengambil data produk');
+      // Ambil semua produk
+      const { data: prods, error: prodError } = await supabase
+        .from('products')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (prodError) throw prodError;
+
+      // Ambil semua kategori
+      const { data: cats, error: catError } = await supabase
+        .from('categories')
+        .select('id, name')
+        .order('name', { ascending: true });
+
+      if (catError) throw catError;
+
+      setProducts(prods || []);
+      setCategories(cats || []);
+    } catch (error: any) {
+      console.error('Error fetching products/categories:', error);
+      toast.error('Gagal memuat data: ' + error.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -57,12 +90,17 @@ export default function AdminProducts() {
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
-      ...(name === 'name' && { slug: value.toLowerCase().replace(/\s+/g, '-') }),
+      ...(name === 'name' && { slug: value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') }),
     }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!formData.name || !formData.category_id || !formData.price || !formData.stock) {
+      toast.error('Lengkapi semua field wajib');
+      return;
+    }
 
     const productData = {
       name: formData.name,
@@ -70,72 +108,73 @@ export default function AdminProducts() {
       description: formData.description,
       price: parseInt(formData.price),
       stock: parseInt(formData.stock),
-      category_id: formData.categoryId, // sesuaikan nama kolom DB
-      images: formData.images.split(',').map(url => url.trim()),
-      sizes: formData.sizes.split(',').map(size => size.trim()),
+      category_id: formData.category_id,
+      images: formData.images.split(',').map(url => url.trim()).filter(Boolean),
+      sizes: formData.sizes.split(',').map(size => size.trim()).filter(Boolean),
       featured: formData.featured,
     };
 
-    if (editingProduct) {
-      // UPDATE
-      const { error } = await supabase
-        .from('products')
-        .update(productData)
-        .eq('id', editingProduct.id);
+    try {
+      if (editingProduct) {
+        // UPDATE
+        const { error } = await supabase
+          .from('products')
+          .update(productData)
+          .eq('id', editingProduct.id);
 
-      if (error) {
-        toast.error('Gagal mengupdate produk: ' + error.message);
-      } else {
+        if (error) throw error;
         toast.success('Produk berhasil diupdate');
-        fetchData(); // Reload data
-      }
-    } else {
-      // INSERT
-      // ID biarkan auto generate oleh DB atau generate UUID di sini jika tipe kolom text
-      // Di script SQL kita pakai text, jadi kita generate ID simple
-      const newId = Date.now().toString();
-      const { error } = await supabase
-        .from('products')
-        .insert({ id: newId, ...productData });
-
-      if (error) {
-        toast.error('Gagal menambah produk: ' + error.message);
       } else {
-        toast.success('Produk berhasil ditambahkan');
-        fetchData();
-      }
-    }
+        // INSERT (id biarkan auto-generate oleh Supabase jika tipe uuid, atau generate manual jika text)
+        const { error } = await supabase
+          .from('products')
+          .insert(productData);
 
-    setIsDialogOpen(false);
-    resetForm();
+        if (error) throw error;
+        toast.success('Produk berhasil ditambahkan');
+      }
+
+      fetchData(); // Refresh tabel
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (error: any) {
+      console.error('Error saving product:', error);
+      toast.error('Gagal menyimpan produk: ' + error.message);
+    }
   };
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product);
     setFormData({
       name: product.name,
-      slug: product.slug,
-      description: product.description,
+      slug: product.slug || '',
+      description: product.description || '',
       price: product.price.toString(),
       stock: product.stock.toString(),
-      categoryId: product.categoryId,
-      images: product.images.join(', '),
-      sizes: product.sizes.join(', '),
-      featured: product.featured,
+      category_id: product.category_id,
+      images: product.images?.join(', ') || '',
+      sizes: product.sizes?.join(', ') || '',
+      featured: product.featured || false,
     });
     setIsDialogOpen(true);
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Yakin ingin menghapus produk ini?')) {
-      const { error } = await supabase.from('products').delete().eq('id', id);
-      
-      if (error) {
-        toast.error('Gagal menghapus: ' + error.message);
-      } else {
-        setProducts(prev => prev.filter(prod => prod.id !== id));
-        toast.success('Produk berhasil dihapus');
-      }
+    if (!confirm('Yakin ingin menghapus produk ini?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      toast.success('Produk berhasil dihapus');
+      fetchData(); // Refresh
+    } catch (error: any) {
+      console.error('Error deleting product:', error);
+      toast.error('Gagal menghapus: ' + error.message);
     }
   };
 
@@ -146,7 +185,7 @@ export default function AdminProducts() {
       description: '',
       price: '',
       stock: '',
-      categoryId: '',
+      category_id: '',
       images: '',
       sizes: '',
       featured: false,
@@ -161,7 +200,7 @@ export default function AdminProducts() {
 
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = filterCategory === 'all' || product.categoryId === filterCategory;
+    const matchesCategory = filterCategory === 'all' || product.category_id === filterCategory;
     return matchesSearch && matchesCategory;
   });
 
@@ -199,12 +238,8 @@ export default function AdminProducts() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="categoryId">Kategori</Label>
-                    <Select
-                      value={formData.categoryId}
-                      onValueChange={(value: string) => setFormData(prev => ({ ...prev, categoryId: value }))}
-                      required
-                    >
+                    <Label htmlFor="category_id">Kategori</Label>
+                    <Select value={filterCategory} onValueChange={(value: string) => setFilterCategory(value)}>
                       <SelectTrigger className="mt-1">
                         <SelectValue placeholder="Pilih kategori" />
                       </SelectTrigger>
@@ -218,7 +253,7 @@ export default function AdminProducts() {
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="price">Harga</Label>
+                    <Label htmlFor="price">Harga (Rp)</Label>
                     <Input
                       id="price"
                       name="price"
@@ -242,7 +277,7 @@ export default function AdminProducts() {
                     />
                   </div>
                 </div>
-                
+
                 <div>
                   <Label htmlFor="description">Deskripsi</Label>
                   <Textarea
@@ -257,35 +292,27 @@ export default function AdminProducts() {
                 </div>
 
                 <div>
-                  <Label htmlFor="images">URL Gambar</Label>
+                  <Label htmlFor="images">URL Gambar (pisahkan dengan koma)</Label>
                   <Input
                     id="images"
                     name="images"
                     value={formData.images}
                     onChange={handleInputChange}
-                    placeholder="https://example.com/image.jpg, https://..."
-                    required
+                    placeholder="https://example.com/img1.jpg, https://example.com/img2.jpg"
                     className="mt-1"
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Pisahkan dengan koma untuk multiple images
-                  </p>
                 </div>
 
                 <div>
-                  <Label htmlFor="sizes">Ukuran</Label>
+                  <Label htmlFor="sizes">Ukuran (pisahkan dengan koma)</Label>
                   <Input
                     id="sizes"
                     name="sizes"
                     value={formData.sizes}
                     onChange={handleInputChange}
                     placeholder="S, M, L, XL"
-                    required
                     className="mt-1"
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Pisahkan dengan koma
-                  </p>
                 </div>
 
                 <div className="flex items-center space-x-2">
@@ -304,7 +331,7 @@ export default function AdminProducts() {
 
                 <div className="flex space-x-2">
                   <Button type="submit" className="flex-1">
-                    {editingProduct ? 'Update' : 'Tambah'}
+                    {editingProduct ? 'Update Produk' : 'Tambah Produk'}
                   </Button>
                   <Button
                     type="button"
@@ -320,10 +347,10 @@ export default function AdminProducts() {
           </Dialog>
         </div>
 
-        {/* Filters */}
+        {/* Search & Filter */}
         <div className="flex flex-col sm:flex-row gap-4">
           <Input
-            placeholder="Cari produk..."
+            placeholder="Cari nama produk..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="max-w-sm"
@@ -359,59 +386,73 @@ export default function AdminProducts() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-4">Memuat data...</TableCell>
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  Memuat data produk...
+                </TableCell>
               </TableRow>
-            ) : filteredProducts.map(product => {
-              const category = categories.find(c => c.id === product.categoryId);
-              return (
-                <TableRow key={product.id}>
-                  <TableCell>
-                    <div className="flex items-center space-x-3">
-                      <div className="w-12 h-12 bg-muted rounded flex items-center justify-center flex-shrink-0">
-                        <ImageIcon className="h-6 w-6 text-muted-foreground" />
+            ) : filteredProducts.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  Tidak ada produk ditemukan
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredProducts.map(product => {
+                const category = categories.find(c => c.id === product.category_id);
+                return (
+                  <TableRow key={product.id}>
+                    <TableCell>
+                      <div className="flex items-center space-x-3">
+                        <div className="w-12 h-12 bg-muted rounded flex items-center justify-center flex-shrink-0">
+                          {product.images?.[0] ? (
+                            <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover rounded" />
+                          ) : (
+                            <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{product.name}</p>
+                          <p className="text-sm text-muted-foreground truncate">
+                            {product.sizes?.join(', ') || '-'}
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="font-medium truncate">{product.name}</p>
-                        <p className="text-sm text-muted-foreground truncate">
-                          {product.sizes.join(', ')}
-                        </p>
+                    </TableCell>
+                    <TableCell>{category?.name || '-'}</TableCell>
+                    <TableCell>Rp {product.price.toLocaleString('id-ID')}</TableCell>
+                    <TableCell>
+                      <Badge variant={product.stock < 20 ? 'destructive' : product.stock === 0 ? 'secondary' : 'default'}>
+                        {product.stock}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {product.featured && (
+                        <Badge className="bg-accent">Unggulan</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEdit(product)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(product.id)}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{category?.name}</TableCell>
-                  <TableCell>Rp {product.price.toLocaleString('id-ID')}</TableCell>
-                  <TableCell>
-                    <Badge variant={product.stock < 20 ? 'destructive' : 'secondary'}>
-                      {product.stock}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {product.featured && (
-                      <Badge className="bg-accent">Unggulan</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end space-x-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(product)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(product.id)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
           </TableBody>
         </Table>
       </div>

@@ -40,7 +40,7 @@ export function Navbar() {
                   Pesanan Saya
                 </Link>
                 {isAdmin && (
-                  <Link to="/admin/dashboard" className="text-sm font-medium text-black hover:text-gray-700 transition-colors px-2">
+                  <Link to="/admin" className="text-sm font-medium text-black hover:text-gray-700 transition-colors px-2">
                     Admin Panel
                   </Link>
                 )}
