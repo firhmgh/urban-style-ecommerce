@@ -29,7 +29,7 @@ export default function Checkout() {
   const [paymentMethod, setPaymentMethod] = useState('bank-transfer');
   const [loading, setLoading] = useState(false);
 
-  if (!isAuthenticated || items.length === 0) {
+  if (!isAuthenticated || !user || items.length === 0) {
     navigate(items.length === 0 ? '/cart' : '/login');
     return null;
   }
@@ -56,17 +56,17 @@ export default function Checkout() {
     }
 
     try {
-      // 1. Buat ID custom unik
+      // 1. Buat ID custom unik (ORD-tahun-random6digit)
       const year = new Date().getFullYear();
-      const random = Math.floor(100000 + Math.random() * 900000); // 6 digit random
+      const random = Math.floor(100000 + Math.random() * 900000); // 6 digit acak
       const orderId = `ORD-${year}-${random}`;
 
-      // 2. Insert ke orders
-      const { data: order, error: orderError } = await supabase
+      // 2. Insert ke tabel orders
+      const { error: orderError } = await supabase
         .from('orders')
         .insert({
           id: orderId,
-          customer_id: user?.id,
+          customer_id: user.id,
           customer_name: formData.name,
           customer_email: formData.email,
           total: grandTotal,
@@ -77,22 +77,20 @@ export default function Checkout() {
             address: formData.address,
             city: formData.city,
             postalCode: formData.postalCode,
-          },
+          } as any, // jsonb
           payment_method: getPaymentMethodName(paymentMethod),
-        })
-        .select()
-        .single();
+        });
 
       if (orderError) throw orderError;
 
-      // 3. Insert ke order_items
+      // 3. Insert ke tabel order_items (semua item di keranjang)
       const orderItemsData = items.map(item => ({
         order_id: orderId,
         product_id: item.id,
         product_name: item.name,
         quantity: item.quantity,
         price: item.price,
-        size: item.selectedSize, // ← perbaikan TS: pakai selectedSize, bukan size
+        size: item.selectedSize || 'N/A', // fallback jika selectedSize kosong
       }));
 
       const { error: itemsError } = await supabase
@@ -101,13 +99,13 @@ export default function Checkout() {
 
       if (itemsError) throw itemsError;
 
-      // Sukses
+      // Sukses: kosongkan keranjang, beri notif, redirect ke orders
       clearCart();
-      toast.success('Pesanan berhasil dibuat!');
+      toast.success('Pesanan berhasil dibuat! ID Pesanan: ' + orderId);
       navigate('/orders');
     } catch (error: any) {
       console.error('Checkout error:', error);
-      toast.error(error.message || 'Gagal membuat pesanan');
+      toast.error(error.message || 'Gagal membuat pesanan. Cek koneksi atau console.');
     } finally {
       setLoading(false);
     }
@@ -268,7 +266,7 @@ export default function Checkout() {
                         <div className="flex-1 min-w-0">
                           <p className="truncate font-medium">{item.name}</p>
                           <p className="text-muted-foreground text-xs">
-                            {item.selectedSize} × {item.quantity} {/* ← perbaikan TS: selectedSize */}
+                            {item.selectedSize || 'N/A'} × {item.quantity}
                           </p>
                         </div>
                         <span className="ml-2 font-medium">
