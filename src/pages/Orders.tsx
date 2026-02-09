@@ -36,8 +36,13 @@ export default function Orders() {
         console.error("Gagal mengambil orders", error);
       } else {
         // Mapping Snake Case DB -> Camel Case Frontend
+
+        const year = new Date().getFullYear();
+        const timestamp = Date.now().toString().slice(-6); // 6 digit terakhir timestamp
+        const orderId = `ORD-${year}-${timestamp}`; // contoh: ORD-2026-123456
+
         const mappedOrders: Order[] = data.map((order: any) => ({
-          id: order.id,
+          id: orderId,
           customerId: order.customer_id,
           customerName: order.customer_name,
           customerEmail: order.customer_email,
